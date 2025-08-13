@@ -2,21 +2,27 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Database, FileSpreadsheet, Search } from 'lucide-react';
+import { Plus, Database, FileSpreadsheet, FolderOpen } from 'lucide-react';
 import ItemTypeCreator from '@/components/ItemTypeCreator';
 import ItemCreator from '@/components/ItemCreator';
 import ItemList from '@/components/ItemList';
+import ProjectCreator from '@/components/ProjectCreator';
+import ProjectList from '@/components/ProjectList';
+import ProjectView from '@/components/ProjectView';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import type { ItemType, ItemInstance } from '@/types/ItemType';
+import type { Project } from '@/types/Project';
 import { useToast } from '@/hooks/use-toast';
 
-type View = 'home' | 'create-type' | 'create-item' | 'view-items';
+type View = 'home' | 'create-type' | 'create-item' | 'view-items' | 'create-project' | 'view-projects' | 'view-project';
 
 const Index = () => {
   const [currentView, setCurrentView] = useState<View>('home');
   const [selectedTypeId, setSelectedTypeId] = useState<string>('');
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [itemTypes, setItemTypes] = useLocalStorage<ItemType[]>('itemTypes', []);
   const [items, setItems] = useLocalStorage<ItemInstance[]>('items', []);
+  const [projects, setProjects] = useLocalStorage<Project[]>('projects', []);
   const { toast } = useToast();
 
   const selectedItemType = itemTypes.find(type => type.id === selectedTypeId);
@@ -46,9 +52,46 @@ const Index = () => {
 
   const handleDeleteItems = (itemIds: string[]) => {
     setItems(items.filter(item => !itemIds.includes(item.id)));
+    // Also remove these items from all projects
+    setProjects(projects.map(project => ({
+      ...project,
+      itemIds: project.itemIds.filter(id => !itemIds.includes(id)),
+      updatedAt: new Date().toISOString()
+    })));
     toast({
       title: "Items deleted",
       description: `${itemIds.length} item(s) have been deleted.`,
+    });
+  };
+
+  const handleSaveProject = (newProject: Project) => {
+    setProjects([...projects, newProject]);
+    setCurrentView('view-projects');
+    toast({
+      title: "Project created",
+      description: `${newProject.name} has been created successfully.`,
+    });
+  };
+
+  const handleViewProject = (project: Project) => {
+    setSelectedProject(project);
+    setCurrentView('view-project');
+  };
+
+  const handleUpdateProject = (updatedProject: Project) => {
+    setProjects(projects.map(p => p.id === updatedProject.id ? updatedProject : p));
+    setSelectedProject(updatedProject);
+    toast({
+      title: "Project updated",
+      description: `${updatedProject.name} has been updated.`,
+    });
+  };
+
+  const handleDeleteProject = (projectId: string) => {
+    setProjects(projects.filter(p => p.id !== projectId));
+    toast({
+      title: "Project deleted",
+      description: "Project has been deleted successfully.",
     });
   };
 
@@ -85,6 +128,40 @@ const Index = () => {
           />
         );
       
+      case 'create-project':
+        return (
+          <ProjectCreator
+            onSave={handleSaveProject}
+            onBack={() => setCurrentView('home')}
+          />
+        );
+      
+      case 'view-projects':
+        return (
+          <ProjectList
+            projects={projects}
+            items={items}
+            onViewProject={handleViewProject}
+            onCreateNew={() => setCurrentView('create-project')}
+            onDeleteProject={handleDeleteProject}
+          />
+        );
+      
+      case 'view-project':
+        if (!selectedProject) {
+          setCurrentView('view-projects');
+          return null;
+        }
+        return (
+          <ProjectView
+            project={selectedProject}
+            allItems={items}
+            itemTypes={itemTypes}
+            onBack={() => setCurrentView('view-projects')}
+            onUpdateProject={handleUpdateProject}
+          />
+        );
+      
       default:
         return (
           <div className="space-y-8">
@@ -99,18 +176,33 @@ const Index = () => {
             </div>
 
             {/* Quick Actions */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <Card className="shadow-card transition-all duration-300 hover:shadow-elegant group cursor-pointer"
-                    onClick={() => setCurrentView('create-type')}>
+                    onClick={() => setCurrentView('create-project')}>
                 <CardHeader className="text-center bg-gradient-subtle">
                   <div className="w-16 h-16 mx-auto bg-gradient-primary rounded-full flex items-center justify-center mb-4 group-hover:shadow-glow transition-all duration-300">
                     <Plus className="w-8 h-8 text-white" />
                   </div>
-                  <CardTitle>Create Item Type</CardTitle>
+                  <CardTitle>Create Project</CardTitle>
                 </CardHeader>
                 <CardContent className="text-center">
                   <p className="text-muted-foreground">
-                    Define a new type of item with custom fields and properties.
+                    Create a new project to organize and manage related items.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-card transition-all duration-300 hover:shadow-elegant group cursor-pointer"
+                    onClick={() => setCurrentView('view-projects')}>
+                <CardHeader className="text-center bg-gradient-subtle">
+                  <div className="w-16 h-16 mx-auto bg-gradient-accent rounded-full flex items-center justify-center mb-4 group-hover:shadow-glow transition-all duration-300">
+                    <FolderOpen className="w-8 h-8 text-white" />
+                  </div>
+                  <CardTitle>Manage Projects</CardTitle>
+                </CardHeader>
+                <CardContent className="text-center">
+                  <p className="text-muted-foreground">
+                    View and manage all your projects and their items.
                   </p>
                 </CardContent>
               </Card>
@@ -130,23 +222,51 @@ const Index = () => {
                 </CardContent>
               </Card>
 
-              <Card className="shadow-card transition-all duration-300 hover:shadow-elegant group">
+              <Card className="shadow-card transition-all duration-300 hover:shadow-elegant group cursor-pointer"
+                    onClick={() => setCurrentView('create-type')}>
                 <CardHeader className="text-center bg-gradient-subtle">
                   <div className="w-16 h-16 mx-auto bg-success rounded-full flex items-center justify-center mb-4 group-hover:shadow-glow transition-all duration-300">
                     <FileSpreadsheet className="w-8 h-8 text-white" />
                   </div>
-                  <CardTitle>Export Data</CardTitle>
+                  <CardTitle>Item Types</CardTitle>
                 </CardHeader>
                 <CardContent className="text-center">
                   <p className="text-muted-foreground">
-                    Select items and export them to Excel format for external use.
+                    Define new types of items with custom fields and properties.
                   </p>
                 </CardContent>
               </Card>
             </div>
 
             {/* Statistics */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="shadow-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    Projects
+                    <Badge variant="secondary">{projects.length}</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {projects.length === 0 ? (
+                    <p className="text-muted-foreground">No projects created yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {projects.slice(0, 3).map(project => (
+                        <div key={project.id} className="flex items-center justify-between p-2 bg-muted/50 rounded">
+                          <span className="font-medium">{project.name}</span>
+                          <Badge variant="outline">{project.itemIds.length} items</Badge>
+                        </div>
+                      ))}
+                      {projects.length > 3 && (
+                        <p className="text-sm text-muted-foreground">
+                          +{projects.length - 3} more projects
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
               <Card className="shadow-card">
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
